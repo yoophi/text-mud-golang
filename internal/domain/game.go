@@ -1,8 +1,11 @@
 package domain
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,6 +22,10 @@ type Game struct {
 	rooms    map[RoomID]*roomState
 	events   eventQueue
 	nextInst uint64
+	// bootID makes generated instance IDs unique across process
+	// restarts, so persisted inventory items never collide with freshly
+	// spawned floor items.
+	bootID string
 }
 
 // roomState holds the mutable per-room state: NPCs and floor items.
@@ -45,9 +52,21 @@ func NewGame(w *World, clock Clock, random Random) *Game {
 	for _, r := range w.Rooms() {
 		g.rooms[r.ID] = newRoomState()
 	}
+	g.bootID = newBootID()
 	g.spawnFloorItems()
 	g.spawnNPCs()
 	return g
+}
+
+// newBootID returns a random per-process prefix for instance IDs. It
+// falls back to high-resolution time if the system entropy source is
+// unavailable.
+func newBootID() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // World returns the world definition the engine runs on.

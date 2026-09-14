@@ -128,7 +128,7 @@ func (g *Game) despawnNPC(inst *NPCInstance) []Effect {
 	if state, ok := g.rooms[inst.Room]; ok {
 		delete(state.npcs, inst.InstID)
 	}
-	g.events.dropFor("", inst.InstID)
+	g.events.dropNPC(inst.InstID)
 	g.events.pushRespawn(g.clock.Now().Add(inst.Def.RespawnDelay), inst.Def, inst.Def.Room)
 	return g.broadcastRoom(inst.Room, "", fmt.Sprintf("%s의 시체가 사라졌다.", inst.Def.Name))
 }

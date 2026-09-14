@@ -68,14 +68,25 @@ func (q *eventQueue) due(now time.Time) []gameEvent {
 	return out
 }
 
-// dropFor removes every event involving the given session or NPC
-// instance, so disengaged combat stops cleanly.
-func (q *eventQueue) dropFor(session SessionID, npcInst string) {
+// dropCombat removes pending combat rounds for a session while leaving
+// other recurring events (regeneration, NPC wandering) intact.
+func (q *eventQueue) dropCombat(session SessionID) {
 	kept := q.events[:0]
 	for _, ev := range q.events {
-		if session != "" && ev.session == session {
+		if session != "" && ev.session == session &&
+			(ev.kind == evPlayerRound || ev.kind == evNPCRound) {
 			continue
 		}
+		kept = append(kept, ev)
+	}
+	q.events = kept
+}
+
+// dropNPC removes every event bound to an NPC instance (wandering and
+// combat rounds) so a despawned NPC stops acting entirely.
+func (q *eventQueue) dropNPC(npcInst string) {
+	kept := q.events[:0]
+	for _, ev := range q.events {
 		if npcInst != "" && ev.npcInst == npcInst {
 			continue
 		}

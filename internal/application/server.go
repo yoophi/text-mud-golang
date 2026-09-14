@@ -156,7 +156,28 @@ func (s *Server) loginStep(ctx context.Context, session domain.SessionID, line s
 	case loginConfirmCreate:
 		switch strings.ToLower(word) {
 		case "네", "예", "y", "yes":
-			char := domain.NewCharacter(flow.name, s.game.World().Start())
+			// Re-validate: another session may have created or logged in
+			// the same name while this confirmation was pending.
+			if s.game.IsOnline(flow.name) {
+				flow.stage = loginAskName
+				s.net.Write(session, "이미 접속 중인 이름입니다. 다른 이름을 입력하세요:")
+				return
+			}
+			char, err := s.repo.Load(ctx, flow.name)
+			if err != nil && !errors.Is(err, ErrCharacterNotFound) {
+				s.log.Error("캐릭터 조회 실패", "name", flow.name, "err", err)
+				flow.stage = loginAskName
+				s.net.Write(session, "캐릭터를 조회하는 데 실패했습니다. 이름을 다시 입력하세요:")
+				return
+			}
+			if err == nil {
+				// The character came into existence in the meantime: log in
+				// with it instead of overwriting it.
+				delete(s.logins, session)
+				s.enterWorld(session, char)
+				return
+			}
+			char = domain.NewCharacter(flow.name, s.game.World().Start())
 			delete(s.logins, session)
 			s.enterWorld(session, char)
 		case "아니오", "아니요", "n", "no":

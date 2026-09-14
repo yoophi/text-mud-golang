@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,5 +78,99 @@ func TestStopDisconnectsClients(t *testing.T) {
 	buf := make([]byte, 16)
 	if _, err := client.Read(buf); err == nil {
 		t.Fatal("client should be disconnected after Stop")
+	}
+}
+
+// gateConn is a net.Conn whose Write blocks until released, so tests can
+// hold the session writer mid-write deterministically.
+type gateConn struct {
+	mu      sync.Mutex
+	writes  []string
+	entered chan struct{}
+	release chan struct{}
+	closed  chan struct{}
+	closeOK sync.Once
+}
+
+func newGateConn() *gateConn {
+	return &gateConn{
+		entered: make(chan struct{}, 16),
+		release: make(chan struct{}),
+		closed:  make(chan struct{}),
+	}
+}
+
+func (c *gateConn) Write(b []byte) (int, error) {
+	c.mu.Lock()
+	c.writes = append(c.writes, string(b))
+	c.mu.Unlock()
+	c.entered <- struct{}{}
+	<-c.release
+	return len(b), nil
+}
+
+func (c *gateConn) Read(b []byte) (int, error) {
+	<-c.closed
+	return 0, net.ErrClosed
+}
+
+func (c *gateConn) Close() error {
+	c.closeOK.Do(func() { close(c.closed) })
+	return nil
+}
+
+func (c *gateConn) LocalAddr() net.Addr              { return nil }
+func (c *gateConn) RemoteAddr() net.Addr             { return nil }
+func (c *gateConn) SetDeadline(time.Time) error      { return nil }
+func (c *gateConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *gateConn) SetWriteDeadline(time.Time) error { return nil }
+
+func (c *gateConn) snapshot() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.writes...)
+}
+
+// TestSessionDrainsQueuedMessagesOnClose pins the graceful-shutdown
+// behavior: messages already queued when shutdown starts must still be
+// delivered, and the writer must finish within a bounded time.
+func TestSessionDrainsQueuedMessagesOnClose(t *testing.T) {
+	bc := newGateConn()
+	s := &session{
+		id:      "s1",
+		conn:    bc,
+		out:     make(chan string, 8),
+		done:    make(chan struct{}),
+		flushed: make(chan struct{}),
+	}
+	go s.writeLoop()
+
+	s.enqueue("first")
+	select {
+	case <-bc.entered: // writer is now blocked inside conn.Write
+	case <-time.After(3 * time.Second):
+		t.Fatal("writer never started")
+	}
+
+	s.enqueue("second")
+	s.enqueue("third")
+	s.close() // shutdown requested while the writer is blocked
+	close(bc.release)
+
+	select {
+	case <-s.flushed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("writer did not flush in bounded time")
+	}
+
+	got := bc.snapshot()
+	want := []string{"first", "second", "third"} // enqueue sends raw text; Gateway.Write adds CRLF
+	if len(got) != len(want) {
+		t.Fatalf("drained writes = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("drained writes = %q, want %q", got, want)
+		}
 	}
 }

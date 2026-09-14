@@ -137,7 +137,8 @@ func (g *Game) playerDefeated(session SessionID, c *Character, inst *NPCInstance
 	return effects
 }
 
-// breakCombat cleanly disengages both sides and cancels pending rounds.
+// breakCombat cleanly disengages both sides and cancels pending combat
+// rounds. Recurring events such as regeneration keep running.
 func (g *Game) breakCombat(session SessionID, c *Character) []Effect {
 	if c == nil || !c.InCombat() {
 		return nil
@@ -148,7 +149,7 @@ func (g *Game) breakCombat(session SessionID, c *Character) []Effect {
 		}
 	}
 	c.combatNPCInst = ""
-	g.events.dropFor(session, "")
+	g.events.dropCombat(session)
 	return nil
 }
 
@@ -161,7 +162,10 @@ func (g *Game) checkAggro(session SessionID, c *Character) []Effect {
 		}
 		effects = append(effects, Output{Session: session, Text: fmt.Sprintf("%s이(가) 당신을 노려봅니다!", inst.Def.Name)})
 		effects = append(effects, g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) %s을(를) 노려본다!", inst.Def.Name, c.Name))...)
+		// The ambushed player fights back automatically on the same
+		// schedule as player-initiated combat.
 		g.events.push(g.clock.Now().Add(attackInterval), evNPCRound, session, inst.InstID)
+		g.events.push(g.clock.Now().Add(attackInterval), evPlayerRound, session, inst.InstID)
 	}
 	return effects
 }
@@ -213,7 +217,10 @@ func (g *Game) checkAggroAll(inst *NPCInstance) []Effect {
 		}
 		effects = append(effects, Output{Session: s, Text: fmt.Sprintf("%s이(가) 당신을 노려봅니다!", inst.Def.Name)})
 		effects = append(effects, g.broadcastRoom(inst.Room, s, fmt.Sprintf("%s이(가) %s을(를) 노려본다!", inst.Def.Name, c.Name))...)
+		// Symmetric with player-initiated combat: the victim retaliates
+		// automatically.
 		g.events.push(g.clock.Now().Add(attackInterval), evNPCRound, s, inst.InstID)
+		g.events.push(g.clock.Now().Add(attackInterval), evPlayerRound, s, inst.InstID)
 		break // one victim per NPC
 	}
 	return effects

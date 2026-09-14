@@ -339,3 +339,85 @@ func TestDeterministicCombatReproducible(t *testing.T) {
 		t.Fatalf("combat not reproducible: (%d,%d) vs (%d,%d)", a1, b1, a2, b2)
 	}
 }
+
+func TestAggroedPlayerRetaliatesAutomatically(t *testing.T) {
+	g, clock := newCombatGame(t, 50, 5, 5, true)
+	g.Connect("s1", NewCharacter("영희", "alley"))
+
+	wolf, ok := g.npcByName("쥐")
+	if !ok {
+		t.Fatal("npc missing")
+	}
+	before := wolf.HP
+
+	clock.Advance(attackInterval)
+	effects := g.Tick(clock.Now())
+
+	var playerStruck, npcStruck bool
+	for _, o := range outputs(effects) {
+		if strings.Contains(o.Text, "당신은 쥐을(를) 공격했습니다") {
+			playerStruck = true
+		}
+		if strings.Contains(o.Text, "쥐이(가) 당신을 공격했습니다") {
+			npcStruck = true
+		}
+	}
+	if !playerStruck || !npcStruck {
+		t.Fatalf("ambushed player must fight back (player=%v npc=%v): %+v", playerStruck, npcStruck, outputs(effects))
+	}
+	if wolf.HP >= before {
+		t.Fatalf("retaliation should damage the ambusher: %d -> %d", before, wolf.HP)
+	}
+}
+
+func TestRegenResumesAfterFleeingCombat(t *testing.T) {
+	g, clock := newCombatGame(t, 500, 3, 3, false)
+	g.Connect("s1", NewCharacter("영희", "alley"))
+
+	g.ExecuteLine("s1", "공격 쥐")
+	g.ExecuteLine("s1", "남쪽") // flee breaks combat
+
+	// White-box wound: regen must still be scheduled after disengaging.
+	g.sessions["s1"].HP = 10
+
+	clock.Advance(attackInterval)
+	if effects := g.Tick(clock.Now()); len(outputs(effects)) != 0 {
+		t.Fatalf("fled combat must not keep fighting: %+v", outputs(effects))
+	}
+	clock.Advance(regenInterval - attackInterval)
+	effects := g.Tick(clock.Now())
+
+	var healed bool
+	for _, o := range outputs(effects) {
+		if strings.Contains(o.Text, "몸이 회복") {
+			healed = true
+		}
+	}
+	if !healed {
+		t.Fatalf("regeneration must survive combat break: %+v", outputs(effects))
+	}
+	snap, _ := g.Character("영희")
+	if snap.HP != 10+regenAmount {
+		t.Fatalf("hp = %d, want %d", snap.HP, 10+regenAmount)
+	}
+}
+
+func TestRegenResumesAfterNPCKill(t *testing.T) {
+	g, clock := newCombatGame(t, 2, 1, 1, false)
+	g.Connect("s1", NewCharacter("영희", "alley"))
+	g.ExecuteLine("s1", "공격 쥐") // kills the rat, ending combat
+
+	g.sessions["s1"].HP = 10
+	clock.Advance(regenInterval)
+	effects := g.Tick(clock.Now())
+
+	var healed bool
+	for _, o := range outputs(effects) {
+		if strings.Contains(o.Text, "몸이 회복") {
+			healed = true
+		}
+	}
+	if !healed {
+		t.Fatalf("regeneration must survive npc death: %+v", outputs(effects))
+	}
+}

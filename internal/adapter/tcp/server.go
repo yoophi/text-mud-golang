@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yoophi/text-mud-golang/internal/application"
 	"github.com/yoophi/text-mud-golang/internal/domain"
@@ -60,16 +61,19 @@ func (g *Gateway) acceptLoop() {
 				return
 			}
 		}
+		g.wg.Add(1)
 		go g.handle(conn)
 	}
 }
 
 func (g *Gateway) handle(conn net.Conn) {
+	defer g.wg.Done()
 	s := &session{
-		id:   domain.SessionID(fmt.Sprintf("s%d", g.next.Add(1))),
-		conn: conn,
-		out:  make(chan string, 128),
-		done: make(chan struct{}),
+		id:      domain.SessionID(fmt.Sprintf("s%d", g.next.Add(1))),
+		conn:    conn,
+		out:     make(chan string, 128),
+		done:    make(chan struct{}),
+		flushed: make(chan struct{}),
 	}
 	g.sessions.Store(s.id, s)
 	g.send(application.Input{Session: s.id, Kind: application.InputConnected})
@@ -121,8 +125,9 @@ func (g *Gateway) Close(id domain.SessionID) {
 	}
 }
 
-// Stop stops accepting connections and disconnects every session,
-// letting writers drain briefly.
+// Stop stops accepting connections, asks every session to flush its
+// queued output, waits for the connection goroutines to finish, and
+// force-closes anything still stuck after a bounded wait.
 func (g *Gateway) Stop() {
 	g.stopOnce.Do(func() {
 		close(g.done)
@@ -133,25 +138,59 @@ func (g *Gateway) Stop() {
 			v.(*session).close()
 			return true
 		})
-		g.wg.Wait()
+		waited := make(chan struct{})
+		go func() {
+			g.wg.Wait()
+			close(waited)
+		}()
+		select {
+		case <-waited:
+		case <-time.After(stopWait):
+			g.sessions.Range(func(_, v any) bool {
+				v.(*session).forceClose()
+				return true
+			})
+			<-waited
+		}
 	})
 }
 
 // session owns one client connection.
 type session struct {
-	id   domain.SessionID
-	conn net.Conn
-	out  chan string
-	done chan struct{}
-	once sync.Once
+	id      domain.SessionID
+	conn    net.Conn
+	out     chan string
+	done    chan struct{}
+	flushed chan struct{}
+	once    sync.Once
 }
 
+const (
+	writeTimeout = 5 * time.Second
+	drainBudget  = 1 * time.Second
+	hardCloseIn  = 2 * time.Second
+	stopWait     = 3 * time.Second
+)
+
+// close asks the writer to shut down. The writer flushes already queued
+// output for a bounded time and then closes the socket itself; a timer
+// force-closes the socket if the writer is stuck.
 func (s *session) close() {
 	s.once.Do(func() {
 		close(s.done)
-		s.conn.Close()
+		go func() {
+			select {
+			case <-s.flushed:
+			case <-time.After(hardCloseIn):
+				s.conn.Close()
+			}
+		}()
 	})
 }
+
+// forceClose drops the socket immediately (used by Gateway.Stop after a
+// bounded wait).
+func (s *session) forceClose() { s.conn.Close() }
 
 func (s *session) enqueue(text string) {
 	select {
@@ -164,6 +203,8 @@ func (s *session) enqueue(text string) {
 }
 
 func (s *session) writeLoop() {
+	defer close(s.flushed)
+	defer s.conn.Close()
 	for {
 		select {
 		case <-s.done:
@@ -171,16 +212,21 @@ func (s *session) writeLoop() {
 			return
 		case text := <-s.out:
 			if !s.write(text) {
-				s.close()
 				return
 			}
 		}
 	}
 }
 
-// drain flushes whatever is already queued before exiting.
+// drain flushes whatever is already queued within a bounded budget, so a
+// shutdown notice is not lost behind a closed socket and a slow client
+// cannot stall shutdown forever.
 func (s *session) drain() {
+	deadline := time.Now().Add(drainBudget)
 	for {
+		if !time.Now().Before(deadline) {
+			return
+		}
 		select {
 		case text := <-s.out:
 			if !s.write(text) {
@@ -193,7 +239,7 @@ func (s *session) drain() {
 }
 
 func (s *session) write(text string) bool {
-	_ = s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_ = s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	_, err := s.conn.Write([]byte(text))
 	return err == nil
 }
@@ -247,9 +293,7 @@ func (f *telnetFilter) feed(b byte) (string, bool) {
 		case b == '\n':
 			return f.flush(), true
 		case b == 8 || b == 127: // backspace / DEL
-			if len(f.line) > 0 {
-				f.line = f.line[:len(f.line)-1]
-			}
+			f.deleteLastRune()
 		case b < 32:
 			// drop other control characters
 		default:
@@ -265,12 +309,17 @@ func (f *telnetFilter) feed(b byte) (string, bool) {
 			}
 			f.state = tfNormal
 		case b == will:
-			f.refusal = wont
+			// Refuse client offers: IAC DONT <option>.
+			f.refusal = dont
 			f.state = tfOption
 		case b == do:
+			// Refuse server-option requests: IAC WONT <option>.
 			f.refusal = wont
 			f.state = tfOption
-		case b == wont || b == dont:
+		case b == wont, b == dont:
+			// Negative confirmations need no reply; consume the option byte
+			// without queuing anything (refusal stays 0).
+			f.refusal = 0
 			f.state = tfOption
 		case b == sb:
 			f.state = tfSub
@@ -278,7 +327,9 @@ func (f *telnetFilter) feed(b byte) (string, bool) {
 			f.state = tfNormal
 		}
 	case tfOption:
-		f.session.sendControl(iac, f.refusal, b)
+		if f.refusal != 0 {
+			f.session.sendControl(iac, f.refusal, b)
+		}
 		f.state = tfNormal
 	case tfSub:
 		if b == iac {
@@ -298,4 +349,17 @@ func (f *telnetFilter) flush() string {
 	line := strings.TrimRight(string(f.line), " \t")
 	f.line = f.line[:0]
 	return line
+}
+
+// deleteLastRune removes the last complete UTF-8 rune so backspacing
+// over Korean text never produces malformed bytes.
+func (f *telnetFilter) deleteLastRune() {
+	if len(f.line) == 0 {
+		return
+	}
+	_, size := utf8.DecodeLastRune(f.line)
+	if size < 1 {
+		size = 1
+	}
+	f.line = f.line[:len(f.line)-size]
 }

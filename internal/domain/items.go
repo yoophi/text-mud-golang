@@ -27,7 +27,7 @@ func (g *Game) spawnFloorItems() {
 
 func (g *Game) newItemInstance(proto ItemProtoID) *ItemInstance {
 	g.nextInst++
-	return &ItemInstance{ID: fmt.Sprintf("item-%d", g.nextInst), Proto: proto}
+	return &ItemInstance{ID: fmt.Sprintf("item-%s-%d", g.bootID, g.nextInst), Proto: proto}
 }
 
 // matchFloor returns floor items in the room whose prototype matches the

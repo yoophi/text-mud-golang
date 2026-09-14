@@ -71,18 +71,56 @@ func TestFilterDropsControlBytes(t *testing.T) {
 	}
 }
 
-func TestFilterRefusesNegotiation(t *testing.T) {
+func TestNegotiationResponses(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []byte
+		want []byte // nil means no reply
+	}{
+		{"WILL은 DONT로 거절", []byte{255, 251, 1}, []byte{255, 254, 1}},
+		{"DO는 WONT로 거절", []byte{255, 253, 24}, []byte{255, 252, 24}},
+		{"WONT는 무응답", []byte{255, 252, 3}, nil},
+		{"DONT는 무응답", []byte{255, 254, 5}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFilter()
+			s := f.session
+			feedLine(t, f, tc.in...)
+			if tc.want == nil {
+				select {
+				case got := <-s.out:
+					t.Fatalf("unexpected reply % x", got)
+				default:
+				}
+				return
+			}
+			select {
+			case got := <-s.out:
+				if got != string(tc.want) {
+					t.Fatalf("reply = % x, want % x", got, tc.want)
+				}
+			default:
+				t.Fatal("refusal should be queued")
+			}
+		})
+	}
+}
+
+func TestFilterBackspaceKorean(t *testing.T) {
 	f := newFilter()
-	s := f.session
-	feedLine(t, f, 255, 251, 1) // IAC WILL ECHO
-	select {
-	case ctrl := <-s.out:
-		want := string([]byte{255, 252, 1}) // IAC WONT ECHO
-		if ctrl != want {
-			t.Fatalf("refusal = % x, want % x", ctrl, want)
-		}
-	default:
-		t.Fatal("refusal should be queued")
+	input := append(append([]byte("안녕"), 8), []byte("하세요\n")...)
+	if got := feedLine(t, f, input...); got != "안하세요" {
+		t.Fatalf("line = %q, want 안하세요", got)
+	}
+
+	f = newFilter()
+	if got := feedLine(t, f, []byte("쥐")...); got != "" {
+		t.Fatalf("incomplete feed should not emit: %q", got)
+	}
+	f.feed(8)
+	if got := feedLine(t, f, []byte("bread\n")...); got != "bread" {
+		t.Fatalf("backspace on empty line must be a no-op, got %q", got)
 	}
 }
 

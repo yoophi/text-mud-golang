@@ -176,3 +176,59 @@ func TestItemsInOtherRoomsNotVisible(t *testing.T) {
 		t.Fatalf("plaza should show exactly one coin, got %d in %q", count, look)
 	}
 }
+
+func TestItemInstanceIDsDoNotCollideAcrossRestarts(t *testing.T) {
+	// Boot 1: pick up the coin and persist the character.
+	g1 := newItemWorld(t)
+	g1.Connect("s1", NewCharacter("영희", "plaza"))
+	g1.ExecuteLine("s1", "줍기 동전")
+	saved, _ := g1.Character("영희")
+	if len(saved.Inventory) != 1 {
+		t.Fatalf("inventory = %+v", saved.Inventory)
+	}
+
+	// Boot 2: same world definition, fresh process counter.
+	g2 := newItemWorld(t)
+	seen := map[string]int{}
+	for _, it := range g2.rooms["plaza"].items {
+		seen[it.ID]++
+	}
+	for _, it := range saved.Inventory {
+		seen[it.ID]++
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Fatalf("item instance ID collides across restarts: %s", id)
+		}
+	}
+
+	// Restore the character, drop the old coin among fresh floor items,
+	// and pick one back: exactly-once invariants must hold.
+	g2.Connect("s1", saved)
+	g2.ExecuteLine("s1", "버리기 동전")
+	look := outputs(g2.ExecuteLine("s1", "보기"))[0].Text
+	if strings.Count(look, "동전") != 2 {
+		t.Fatalf("floor should hold two distinct coins: %q", look)
+	}
+	g2.ExecuteLine("s1", "줍기 동전 2")
+	snap, _ := g2.Character("영희")
+	if len(snap.Inventory) != 1 {
+		t.Fatalf("inventory after re-pick = %+v", snap.Inventory)
+	}
+
+	ids := map[string]bool{}
+	for _, it := range snap.Inventory {
+		if ids[it.ID] {
+			t.Fatalf("duplicate instance id in inventory: %s", it.ID)
+		}
+		ids[it.ID] = true
+	}
+	for _, state := range g2.rooms {
+		for _, it := range state.items {
+			if ids[it.ID] {
+				t.Fatalf("instance id in two places at once: %s", it.ID)
+			}
+			ids[it.ID] = true
+		}
+	}
+}

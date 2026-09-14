@@ -307,3 +307,72 @@ func TestLoopNonOperatorCannotShutdown(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestConcurrentCreateSameName(t *testing.T) {
+	server, net, repo, inputs := newLoopServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx) }()
+
+	// Both sessions submit the same new name and reach the confirm step.
+	for _, s := range []domain.SessionID{"s1", "s2"} {
+		inputs <- Input{Session: s, Kind: InputConnected}
+		net.waitFor(t, s, "이름을 입력하세요")
+		inputs <- Input{Session: s, Kind: InputLine, Line: "영희"}
+		net.waitFor(t, s, "생성할까요")
+	}
+
+	// s1 confirms first and enters the world.
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "네"}
+	net.waitFor(t, "s1", "마을 광장")
+
+	// s2's confirmation must not overwrite s1's character.
+	inputs <- Input{Session: "s2", Kind: InputLine, Line: "네"}
+	net.waitFor(t, "s2", "이미 접속 중인 이름")
+	net.waitFor(t, "s2", "이름을 입력하세요")
+
+	if !server.game.Playing("s1") {
+		t.Fatal("s1 should be in the world")
+	}
+	if server.game.Playing("s2") {
+		t.Fatal("s2 must not enter the world")
+	}
+	created, ok := repo.character("영희")
+	if !ok || created.Room != "plaza" {
+		t.Fatalf("exactly one 영희 should exist: %+v", created)
+	}
+
+	cancel()
+	<-done
+}
+
+func TestConfirmReusesCharacterCreatedMeanwhile(t *testing.T) {
+	server, net, repo, inputs := newLoopServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx) }()
+
+	inputs <- Input{Session: "s1", Kind: InputConnected}
+	net.waitFor(t, "s1", "이름을 입력하세요")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "철수"}
+	net.waitFor(t, "s1", "생성할까요")
+
+	// While the confirmation is pending, the character appears in the
+	// store (another process created it). Confirming must log in with the
+	// existing character instead of overwriting it.
+	existing := domain.NewCharacter("철수", "alley")
+	if err := repo.Save(context.Background(), existing); err != nil {
+		t.Fatal(err)
+	}
+
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "네"}
+	net.waitFor(t, "s1", "뒷골목") // restored room, not the start room
+
+	if !server.game.Playing("s1") {
+		t.Fatal("s1 should be in the world")
+	}
+	cancel()
+	<-done
+}

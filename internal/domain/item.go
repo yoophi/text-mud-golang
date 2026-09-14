@@ -28,23 +28,6 @@ func (p *ItemProto) Matches(name string) bool {
 
 // ItemInstance is a concrete item located in a room or an inventory.
 type ItemInstance struct {
-	ID     string
-	Proto  ItemProtoID
-	holder string // "room:<id>" or "char:<name>"; empty means unplaced
+	ID    string
+	Proto ItemProtoID
 }
-
-// PlacedAt reports where the instance currently resides.
-func (i ItemInstance) PlacedAt() (room RoomID, character string, ok bool) {
-	if len(i.holder) > 5 && i.holder[:5] == "room:" {
-		return RoomID(i.holder[5:]), "", true
-	}
-	if len(i.holder) > 5 && i.holder[:5] == "char:" {
-		return "", i.holder[5:], true
-	}
-	return "", "", false
-}
-
-// place is used by the engine to track exactly one location per instance.
-func (i *ItemInstance) placeInRoom(room RoomID)      { i.holder = "room:" + string(room) }
-func (i *ItemInstance) placeInInventory(name string) { i.holder = "char:" + name }
-func (i *ItemInstance) remove()                      { i.holder = "" }

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -95,8 +96,49 @@ func Parse(line string) (Command, error) {
 		return Command{Verb: VerbMove, Direction: dir}, nil
 	}
 
-	// Later issues extend the parser with talk, item, and combat verbs.
+	// Item and inventory verbs.
+	if matchesAlias(head, getAliases) {
+		target, index, err := parseTargetArgs(rest)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Verb: VerbGet, Target: target, Index: index}, nil
+	}
+	if matchesAlias(head, dropAliases) {
+		target, index, err := parseTargetArgs(rest)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Verb: VerbDrop, Target: target, Index: index}, nil
+	}
+	if matchesAlias(head, invAliases) && len(rest) == 0 {
+		return Command{Verb: VerbInventory}, nil
+	}
+
+	// Later issues extend the parser with combat verbs.
 	return Command{}, fmt.Errorf(unknownCommandHelp)
+}
+
+// parseTargetArgs splits verb arguments into a target name and an
+// optional 1-based selection index: "빵 2" -> ("빵", 2).
+func parseTargetArgs(rest []string) (string, int, error) {
+	if len(rest) == 0 {
+		return "", 0, nil
+	}
+	index := 0
+	words := rest
+	if n, err := strconv.Atoi(rest[len(rest)-1]); err == nil {
+		index = n
+		words = rest[:len(rest)-1]
+	}
+	target := strings.Join(words, " ")
+	if target == "" {
+		return "", 0, fmt.Errorf("대상 이름을 입력하세요. 예: 빵 2")
+	}
+	if index < 0 {
+		return "", 0, fmt.Errorf("번호는 1 이상이어야 합니다")
+	}
+	return target, index, nil
 }
 
 // parseDirection resolves a bare token to a canonical direction,

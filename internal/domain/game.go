@@ -45,6 +45,7 @@ func NewGame(w *World, clock Clock, random Random) *Game {
 	for _, r := range w.Rooms() {
 		g.rooms[r.ID] = newRoomState()
 	}
+	g.spawnFloorItems()
 	return g
 }
 
@@ -134,6 +135,12 @@ func (g *Game) Execute(session SessionID, cmd Command) []Effect {
 		return g.move(session, c, cmd.Direction)
 	case VerbSay:
 		return g.say(session, c, cmd.Text)
+	case VerbGet:
+		return g.pickUp(session, c, cmd.Target, cmd.Index)
+	case VerbDrop:
+		return g.dropItem(session, c, cmd.Target, cmd.Index)
+	case VerbInventory:
+		return g.inventory(session, c)
 	default:
 		return []Effect{Output{Session: session, Text: unknownCommandHelp}}
 	}
@@ -204,6 +211,13 @@ func (g *Game) say(session SessionID, c *Character, text string) []Effect {
 // including other characters present there.
 func (g *Game) renderRoom(session SessionID, room RoomID) string {
 	out := g.world.Describe(room)
+	if state, ok := g.rooms[room]; ok && len(state.items) > 0 {
+		names := make([]string, 0, len(state.items))
+		for _, it := range state.items {
+			names = append(names, g.itemName(*it))
+		}
+		out += "\n바닥에 놓인 물건: " + strings.Join(names, ", ")
+	}
 	var others []string
 	for s, c := range g.sessions {
 		if s != session && c.Room == room {
@@ -244,4 +258,4 @@ func (g *Game) broadcastRoom(room RoomID, skip SessionID, text string) []Effect 
 	return []Effect{Broadcast{Sessions: targets, Text: text}}
 }
 
-const unknownCommandHelp = "알 수 없는 명령입니다. 사용 가능한 명령: 보기, 북쪽/남쪽/동쪽/서쪽/위/아래, 말하기 <내용>"
+const unknownCommandHelp = "알 수 없는 명령입니다. 사용 가능한 명령: 보기, 북쪽/남쪽/동쪽/서쪽/위/아래, 말하기 <내용>, 줍기 <물건>, 버리기 <물건>, 인벤토리"

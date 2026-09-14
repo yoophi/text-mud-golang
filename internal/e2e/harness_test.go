@@ -27,6 +27,14 @@ const defaultWorld = `{
     {"id": "plaza", "name": "마을 광장", "description": "오래된 분수가 있는 광장이다.", "exits": {"북쪽": "alley", "동쪽": "market"}},
     {"id": "alley", "name": "뒷골목", "description": "좁고 어두운 골목이다.", "exits": {"남쪽": "plaza"}},
     {"id": "market", "name": "시장", "description": "활기찬 시장이다.", "exits": {"서쪽": "plaza"}}
+  ],
+  "items": [
+    {"id": "bread", "name": "빵", "aliases": ["식빵"], "description": "갓 구운 빵이다."},
+    {"id": "coin", "name": "동전", "description": "약간 광이 나는 동전이다."}
+  ],
+  "itemSpawns": [
+    {"room": "plaza", "item": "bread", "count": 2},
+    {"room": "plaza", "item": "coin", "count": 1}
   ]
 }`
 
@@ -56,7 +64,7 @@ func (ts *testServer) launch() {
 	if err := os.WriteFile(worldPath, []byte(ts.world), 0o644); err != nil {
 		ts.t.Fatal(err)
 	}
-	loaded, err := worldfile.Load(worldPath)
+	world, err := worldfile.Load(worldPath)
 	if err != nil {
 		ts.t.Fatalf("world: %v", err)
 	}
@@ -64,7 +72,7 @@ func (ts *testServer) launch() {
 	if err != nil {
 		ts.t.Fatalf("sqlite: %v", err)
 	}
-	game := domain.NewGame(loaded.World, application.SystemClock{}, application.SystemRandom{})
+	game := domain.NewGame(world, application.SystemClock{}, application.SystemRandom{})
 	inputs := make(chan application.Input, 256)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	gateway := tcp.NewGateway(logger, inputs)

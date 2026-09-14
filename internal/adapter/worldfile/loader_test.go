@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/yoophi/text-mud-golang/internal/domain"
 )
 
 const validWorld = `{
@@ -17,33 +19,33 @@ const validWorld = `{
   ]
 }`
 
-func mustParse(t *testing.T, data string) *Loaded {
+func mustParse(t *testing.T, data string) *domain.World {
 	t.Helper()
-	loaded, err := Parse([]byte(data))
+	world, err := Parse([]byte(data))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	return loaded
+	return world
 }
 
 func TestParseLoadsConnectedRooms(t *testing.T) {
-	loaded := mustParse(t, validWorld)
+	world := mustParse(t, validWorld)
 
-	if loaded.World.Start() != "plaza" {
-		t.Fatalf("start = %s, want plaza", loaded.World.Start())
+	if world.Start() != "plaza" {
+		t.Fatalf("start = %s, want plaza", world.Start())
 	}
-	plaza, ok := loaded.World.Room("plaza")
+	plaza, ok := world.Room("plaza")
 	if !ok {
 		t.Fatal("plaza room missing")
 	}
 	if to, ok := plaza.Exits["북쪽"]; !ok || to != "alley" {
 		t.Fatalf("plaza north exit = %s (%v), want alley", to, ok)
 	}
-	alley, _ := loaded.World.Room("alley")
+	alley, _ := world.Room("alley")
 	if to, ok := alley.Exits["남쪽"]; !ok || to != "plaza" {
 		t.Fatalf("alley south exit should point back at plaza")
 	}
-	if desc := loaded.World.Describe("market"); desc == "" {
+	if desc := world.Describe("market"); desc == "" {
 		t.Fatal("Describe should render the market")
 	}
 }
@@ -111,8 +113,8 @@ func TestParseValidatesItemsAndNPCs(t *testing.T) {
 		t.Fatal("npc with zero hp must be rejected")
 	}
 
-	loaded := mustParse(t, base(``, ``, `{"id": "rat", "name": "쥐", "room": "a", "hp": 5, "damageMin": 1, "damageMax": 3, "aggressive": true, "respawnSeconds": 2.5}`))
-	def := loaded.NPCDefs[0]
+	world := mustParse(t, base(``, ``, `{"id": "rat", "name": "쥐", "room": "a", "hp": 5, "damageMin": 1, "damageMax": 3, "aggressive": true, "respawnSeconds": 2.5}`))
+	def := world.NPCDefs()[0]
 	if !def.Aggressive || def.RespawnDelay != 2500*time.Millisecond {
 		t.Fatalf("npc def not loaded correctly: %+v", def)
 	}

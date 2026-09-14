@@ -27,9 +27,20 @@ func (r *Room) ExitNames() []string {
 
 // World is the validated, immutable room graph plus spawn metadata.
 type World struct {
-	rooms   map[RoomID]*Room
-	start   RoomID
-	respawn RoomID
+	rooms      map[RoomID]*Room
+	start      RoomID
+	respawn    RoomID
+	itemProtos map[ItemProtoID]*ItemProto
+	itemSpawn  []ItemSpawn
+	npcDefs    []*NPCDef
+}
+
+// ItemSpawn places Count instances of an item prototype in a room at
+// boot time.
+type ItemSpawn struct {
+	Room  RoomID
+	Item  ItemProtoID
+	Count int
 }
 
 // NewWorld validates a set of rooms and returns a World. Duplicate room
@@ -94,6 +105,75 @@ func (w *World) Rooms() []*Room {
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
+
+// SetItems registers item prototypes and boot-time floor spawns,
+// validating references against the room graph.
+func (w *World) SetItems(protos []*ItemProto, spawns []ItemSpawn) error {
+	protosByID := make(map[ItemProtoID]*ItemProto, len(protos))
+	for _, p := range protos {
+		if p.ID == "" || p.Name == "" {
+			return fmt.Errorf("아이템 정의에 id와 name이 필요합니다")
+		}
+		if _, dup := protosByID[p.ID]; dup {
+			return fmt.Errorf("아이템 ID가 중복되었습니다: %s", p.ID)
+		}
+		protosByID[p.ID] = p
+	}
+	for _, sp := range spawns {
+		if _, ok := protosByID[sp.Item]; !ok {
+			return fmt.Errorf("아이템 생성이 정의되지 않은 아이템 %s을(를) 참조합니다", sp.Item)
+		}
+		if _, ok := w.rooms[sp.Room]; !ok {
+			return fmt.Errorf("아이템 생성이 존재하지 않는 방 %s을(를) 참조합니다", sp.Room)
+		}
+		if sp.Count < 1 {
+			return fmt.Errorf("아이템 %s의 생성 수량은 1 이상이어야 합니다", sp.Item)
+		}
+	}
+	w.itemProtos = protosByID
+	w.itemSpawn = spawns
+	return nil
+}
+
+// ItemProto looks up an item prototype.
+func (w *World) ItemProto(id ItemProtoID) (*ItemProto, bool) {
+	p, ok := w.itemProtos[id]
+	return p, ok
+}
+
+// ItemSpawns returns the boot-time floor spawns.
+func (w *World) ItemSpawns() []ItemSpawn { return w.itemSpawn }
+
+// SetNPCs registers NPC definitions, validating spawn rooms and stats.
+func (w *World) SetNPCs(defs []*NPCDef) error {
+	ids := map[NPCDefID]bool{}
+	for _, d := range defs {
+		if d.ID == "" || d.Name == "" {
+			return fmt.Errorf("NPC 정의에 id와 name이 필요합니다")
+		}
+		if ids[d.ID] {
+			return fmt.Errorf("NPC ID가 중복되었습니다: %s", d.ID)
+		}
+		if _, ok := w.rooms[d.Room]; !ok {
+			return fmt.Errorf("NPC %s이(가) 존재하지 않는 방 %s을(를) 참조합니다", d.ID, d.Room)
+		}
+		if d.HP < 1 {
+			return fmt.Errorf("NPC %s의 hp는 1 이상이어야 합니다", d.ID)
+		}
+		if d.DamageMin < 0 || d.DamageMax < d.DamageMin {
+			return fmt.Errorf("NPC %s의 피해 범위가 잘못되었습니다", d.ID)
+		}
+		if d.RespawnDelay <= 0 {
+			return fmt.Errorf("NPC %s의 respawnSeconds는 0보다 커야 합니다", d.ID)
+		}
+		ids[d.ID] = true
+	}
+	w.npcDefs = defs
+	return nil
+}
+
+// NPCDefs returns every NPC definition.
+func (w *World) NPCDefs() []*NPCDef { return w.npcDefs }
 
 // Describe renders the look output for a room.
 func (w *World) Describe(id RoomID) string {

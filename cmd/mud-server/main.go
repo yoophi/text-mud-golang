@@ -26,7 +26,7 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	loaded, err := worldfile.Load(*worldPath)
+	world, err := worldfile.Load(*worldPath)
 	if err != nil {
 		logger.Error("월드 정의를 불러올 수 없습니다", "err", err)
 		os.Exit(1)
@@ -48,7 +48,7 @@ func main() {
 	}
 	defer repo.Close()
 
-	game := domain.NewGame(loaded.World, application.SystemClock{}, application.SystemRandom{})
+	game := domain.NewGame(world, application.SystemClock{}, application.SystemRandom{})
 
 	inputs := make(chan application.Input, 256)
 	gateway := tcp.NewGateway(logger, inputs)
@@ -57,7 +57,7 @@ func main() {
 		logger.Error("리스닝 실패", "err", err)
 		os.Exit(1)
 	}
-	logger.Info("MUD 서버 시작", "addr", bound, "rooms", len(loaded.World.Rooms()))
+	logger.Info("MUD 서버 시작", "addr", bound, "rooms", len(world.Rooms()))
 
 	var operatorNames []string
 	for _, name := range strings.Split(*operators, ",") {

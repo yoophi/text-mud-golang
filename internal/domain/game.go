@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -199,9 +200,21 @@ func (g *Game) say(session SessionID, c *Character, text string) []Effect {
 	return effects
 }
 
-// renderRoom builds the look output for the session's current room.
+// renderRoom builds the look output for the session's current room,
+// including other characters present there.
 func (g *Game) renderRoom(session SessionID, room RoomID) string {
-	return g.world.Describe(room)
+	out := g.world.Describe(room)
+	var others []string
+	for s, c := range g.sessions {
+		if s != session && c.Room == room {
+			others = append(others, c.Name)
+		}
+	}
+	if len(others) > 0 {
+		sort.Strings(others)
+		out += "\n함께 있는 사람: " + strings.Join(others, ", ")
+	}
+	return out
 }
 
 // save returns a SaveCharacter effect for the session's character.

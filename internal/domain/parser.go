@@ -18,6 +18,9 @@ var directionAliases = map[string]Direction{
 
 var lookAliases = []string{"보기", "뷰", "주변", "look", "l"}
 
+// sayAliases are chat verbs; everything after the verb is the message.
+var sayAliases = []string{"말하기", "말", "say", "'"}
+
 // moveAliases are explicit movement verbs that take a direction argument.
 var moveAliases = []string{"이동", "가기", "가자", "go", "move"}
 
@@ -74,6 +77,9 @@ func Parse(line string) (Command, error) {
 
 	if matchesAlias(head, lookAliases) && len(rest) == 0 {
 		return Command{Verb: VerbLook}, nil
+	}
+	if matchesAlias(head, sayAliases) {
+		return Command{Verb: VerbSay, Text: strings.Join(rest, " ")}, nil
 	}
 	if dir, ok := parseDirection(head); ok && len(rest) == 0 {
 		return Command{Verb: VerbMove, Direction: dir}, nil

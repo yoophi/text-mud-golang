@@ -123,6 +123,16 @@ func (g *Game) Execute(session SessionID, cmd Command) []Effect {
 	}
 }
 
+// ExecuteLine parses raw player input and runs it. Parse failures do not
+// change state and come back as a guidance Output effect.
+func (g *Game) ExecuteLine(session SessionID, line string) []Effect {
+	cmd, err := Parse(line)
+	if err != nil {
+		return []Effect{Output{Session: session, Text: err.Error()}}
+	}
+	return g.Execute(session, cmd)
+}
+
 // Tick advances the engine to now, executing every scheduled event whose
 // time has come exactly once and returning the resulting effects.
 func (g *Game) Tick(now time.Time) []Effect {

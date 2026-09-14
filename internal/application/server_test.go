@@ -108,6 +108,19 @@ func (r *fakeRepo) savesFor(name string) int {
 	return n
 }
 
+// character returns a copy of the stored character under lock. Tests
+// must use this instead of touching r.exists directly: the server
+// goroutine keeps calling Save concurrently.
+func (r *fakeRepo) character(name string) (*domain.Character, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	c, ok := r.exists[name]
+	if !ok {
+		return nil, false
+	}
+	return c.Copy(), true
+}
+
 func testWorld() *domain.World {
 	w, err := domain.NewWorld([]*domain.Room{
 		{ID: "plaza", Name: "마을 광장", Description: "광장이다.", Exits: map[domain.Direction]domain.RoomID{domain.DirNorth: "alley"}},
@@ -147,15 +160,16 @@ func TestLoopProcessesQueuedInputsAndSavesOnDisconnect(t *testing.T) {
 	net.waitFor(t, "s1", "뒷골목")
 
 	inputs <- Input{Session: "s1", Kind: InputDisconnected}
+	// Wait until the disconnect save landed (the loop goroutine may
+	// still be saving when the first poll succeeds on an earlier save).
 	deadline := time.Now().Add(3 * time.Second)
-	for repo.savesFor("영희") == 0 && time.Now().Before(deadline) {
+	saved, ok := repo.character("영희")
+	for (!ok || saved.Room != "alley") && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
+		saved, ok = repo.character("영희")
 	}
-	if repo.savesFor("영희") == 0 {
-		t.Fatal("disconnect should persist the character")
-	}
-	if saved := repo.exists["영희"]; saved == nil || saved.Room != "alley" {
-		t.Fatalf("saved character wrong: %+v", saved)
+	if !ok || saved.Room != "alley" {
+		t.Fatalf("disconnect should persist the character at alley: %+v", saved)
 	}
 
 	cancel()
@@ -252,7 +266,8 @@ func TestLoopAdminShutdownSavesAndStops(t *testing.T) {
 	if repo.savesFor("영희") == 0 {
 		t.Fatal("shutdown must save characters")
 	}
-	if saved := repo.exists["영희"]; saved == nil || saved.Room != "alley" {
+	saved, ok := repo.character("영희")
+	if !ok || saved.Room != "alley" {
 		t.Fatalf("shutdown save wrong: %+v", saved)
 	}
 	net.mu.Lock()

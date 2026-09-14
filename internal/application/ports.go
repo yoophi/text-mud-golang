@@ -1,5 +1,3 @@
-// Package application coordinates the game engine with inbound (network)
-// and outbound (persistence, output) adapters through ports.
 package application
 
 import (
@@ -21,4 +19,31 @@ type CharacterRepository interface {
 	// Save creates or updates the character atomically.
 	Save(ctx context.Context, c *domain.Character) error
 	Close() error
+}
+
+// InputKind describes what happened on a connection.
+type InputKind int
+
+const (
+	InputConnected InputKind = iota
+	InputLine
+	InputDisconnected
+)
+
+// Input is one inbound event delivered by the network adapter to the
+// single game loop.
+type Input struct {
+	Session domain.SessionID
+	Kind    InputKind
+	Line    string
+}
+
+// NetGateway is the outbound network port. Implementations must never
+// block the caller for long: slow clients are dropped.
+type NetGateway interface {
+	// Listen starts accepting connections and returns the bound address.
+	Listen(addr string) (string, error)
+	Write(session domain.SessionID, text string)
+	Close(session domain.SessionID)
+	Stop()
 }

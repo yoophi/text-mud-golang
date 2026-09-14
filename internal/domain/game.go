@@ -71,6 +71,21 @@ func (g *Game) Character(name string) (*Character, bool) {
 	return g.sessions[s].Copy(), true
 }
 
+// Playing reports whether the session currently controls a character.
+func (g *Game) Playing(session SessionID) bool {
+	_, ok := g.sessions[session]
+	return ok
+}
+
+// Sessions returns every active session ID.
+func (g *Game) Sessions() []SessionID {
+	out := make([]SessionID, 0, len(g.sessions))
+	for s := range g.sessions {
+		out = append(out, s)
+	}
+	return out
+}
+
 // Connect brings an already-loaded (or newly created) character into the
 // world. If the session was already connected, the previous character is
 // disconnected first.

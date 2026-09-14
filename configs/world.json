@@ -1,0 +1,36 @@
+{
+  "startRoom": "town_square",
+  "respawnRoom": "town_square",
+  "rooms": [
+    {
+      "id": "town_square",
+      "name": "마을 광장",
+      "description": "오래된 분수가 가운데 있는 작은 마을의 광장이다. 사방에서 사람들의 웅성거림이 들려온다.",
+      "exits": { "북쪽": "north_road", "동쪽": "market", "서쪽": "gate" }
+    },
+    {
+      "id": "north_road",
+      "name": "북쪽 길",
+      "description": "마을에서 북쪽으로 이어지는 흙길이다. 멀리 언덕이 보인다.",
+      "exits": { "남쪽": "town_square", "북쪽": "hilltop" }
+    },
+    {
+      "id": "market",
+      "name": "시장",
+      "description": "좌판이 늘어선 활기찬 시장이다. 어딘가에서 구운 빵 냄새가 난다.",
+      "exits": { "서쪽": "town_square" }
+    },
+    {
+      "id": "gate",
+      "name": "마을 입구",
+      "description": "낡은 나무 문이 달린 마을 입구다. 밖으로는 넓은 초원이 펼쳐져 있다.",
+      "exits": { "동쪽": "town_square" }
+    },
+    {
+      "id": "hilltop",
+      "name": "언덕 위",
+      "description": "마을이 한눈에 내려다보이는 언덕이다. 바람이 시원하게 분다.",
+      "exits": { "남쪽": "north_road" }
+    }
+  ]
+}

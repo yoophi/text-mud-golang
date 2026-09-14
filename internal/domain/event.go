@@ -10,6 +10,7 @@ const (
 	evPlayerRound
 	evNPCRound
 	evRegen
+	evWander
 )
 
 // gameEvent is a scheduled event. seq preserves FIFO order for events

@@ -4,15 +4,16 @@ import "time"
 
 // NPCDef is an NPC prototype loaded from the world definition.
 type NPCDef struct {
-	ID           NPCDefID
-	Name         string
-	Aliases      []string
-	Room         RoomID // spawn room
-	HP           int
-	DamageMin    int
-	DamageMax    int
-	Aggressive   bool
-	RespawnDelay time.Duration
+	ID             NPCDefID
+	Name           string
+	Aliases        []string
+	Room           RoomID // spawn room
+	HP             int
+	DamageMin      int
+	DamageMax      int
+	Aggressive     bool
+	RespawnDelay   time.Duration
+	WanderInterval time.Duration // 0 means stationary
 }
 
 // Matches reports whether the given name refers to this NPC definition.

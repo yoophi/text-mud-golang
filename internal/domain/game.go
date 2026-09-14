@@ -46,6 +46,7 @@ func NewGame(w *World, clock Clock, random Random) *Game {
 		g.rooms[r.ID] = newRoomState()
 	}
 	g.spawnFloorItems()
+	g.spawnNPCs()
 	return g
 }
 
@@ -174,6 +175,10 @@ func (g *Game) Tick(now time.Time) []Effect {
 
 func (g *Game) runEvent(ev gameEvent) []Effect {
 	switch ev.kind {
+	case evWander:
+		return g.npcWander(ev.npcInst)
+	case evNPCRespawn:
+		return g.respawnNPC(ev.def, ev.room)
 	default:
 		return nil
 	}
@@ -211,6 +216,7 @@ func (g *Game) say(session SessionID, c *Character, text string) []Effect {
 // including other characters present there.
 func (g *Game) renderRoom(session SessionID, room RoomID) string {
 	out := g.world.Describe(room)
+	out += g.npcRoomStateText(room)
 	if state, ok := g.rooms[room]; ok && len(state.items) > 0 {
 		names := make([]string, 0, len(state.items))
 		for _, it := range state.items {

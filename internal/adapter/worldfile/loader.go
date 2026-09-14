@@ -43,6 +43,7 @@ type Definition struct {
 		DamageMax      int      `json:"damageMax"`
 		Aggressive     bool     `json:"aggressive"`
 		RespawnSeconds float64  `json:"respawnSeconds"`
+		WanderSeconds  float64  `json:"wanderSeconds"`
 	} `json:"npcs"`
 }
 
@@ -104,7 +105,7 @@ func Parse(data []byte) (*domain.World, error) {
 
 	npcDefs := make([]*domain.NPCDef, 0, len(def.NPCs))
 	for _, n := range def.NPCs {
-		npcDefs = append(npcDefs, &domain.NPCDef{
+		def := &domain.NPCDef{
 			ID:           domain.NPCDefID(n.ID),
 			Name:         n.Name,
 			Aliases:      n.Aliases,
@@ -114,7 +115,11 @@ func Parse(data []byte) (*domain.World, error) {
 			DamageMax:    n.DamageMax,
 			Aggressive:   n.Aggressive,
 			RespawnDelay: respawnDuration(n.RespawnSeconds),
-		})
+		}
+		if n.WanderSeconds > 0 {
+			def.WanderInterval = respawnDuration(n.WanderSeconds)
+		}
+		npcDefs = append(npcDefs, def)
 	}
 	if err := world.SetNPCs(npcDefs); err != nil {
 		return nil, err

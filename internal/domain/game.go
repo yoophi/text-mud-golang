@@ -103,8 +103,10 @@ func (g *Game) Connect(session SessionID, c *Character) []Effect {
 	}
 	g.sessions[session] = c
 	g.byName[c.Name] = session
+	g.scheduleRegen(session)
 	effects = append(effects, Output{Session: session, Text: g.renderRoom(session, c.Room)})
 	effects = append(effects, g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) 모습을 드러냈다.", c.Name))...)
+	effects = append(effects, g.checkAggro(session, c)...)
 	effects = append(effects, g.save(session))
 	return effects
 }
@@ -115,7 +117,8 @@ func (g *Game) Disconnect(session SessionID) []Effect {
 	if !ok {
 		return nil
 	}
-	effects := g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) 자취를 감췄다.", c.Name))
+	effects := g.breakCombat(session, c)
+	effects = append(effects, g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) 자취를 감췄다.", c.Name))...)
 	delete(g.sessions, session)
 	delete(g.byName, c.Name)
 	effects = append(effects, g.saveCharacter(c))
@@ -142,6 +145,8 @@ func (g *Game) Execute(session SessionID, cmd Command) []Effect {
 		return g.dropItem(session, c, cmd.Target, cmd.Index)
 	case VerbInventory:
 		return g.inventory(session, c)
+	case VerbAttack:
+		return g.attack(session, c, cmd.Target, cmd.Index)
 	default:
 		return []Effect{Output{Session: session, Text: unknownCommandHelp}}
 	}
@@ -179,6 +184,31 @@ func (g *Game) runEvent(ev gameEvent) []Effect {
 		return g.npcWander(ev.npcInst)
 	case evNPCRespawn:
 		return g.respawnNPC(ev.def, ev.room)
+	case evPlayerRound:
+		c, ok := g.sessions[ev.session]
+		if !ok {
+			return nil
+		}
+		inst, ok := g.npcByID(ev.npcInst)
+		if !ok {
+			return nil
+		}
+		if !g.stillEngaged(ev.session, c, inst) {
+			return nil
+		}
+		return g.playerStrike(ev.session, c, inst)
+	case evNPCRound:
+		c, ok := g.sessions[ev.session]
+		if !ok {
+			return nil
+		}
+		inst, ok := g.npcByID(ev.npcInst)
+		if !ok {
+			return nil
+		}
+		return g.npcStrike(ev.session, c, inst)
+	case evRegen:
+		return g.regen(ev.session)
 	default:
 		return nil
 	}
@@ -194,10 +224,12 @@ func (g *Game) move(session SessionID, c *Character, dir Direction) []Effect {
 	if !ok {
 		return []Effect{Output{Session: session, Text: fmt.Sprintf("%s 방향으로는 갈 수 없습니다.", dir)}}
 	}
-	effects := g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) %s(으)로 이동했다.", c.Name, dir))
+	effects := g.breakCombat(session, c)
+	effects = append(effects, g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) %s(으)로 이동했다.", c.Name, dir))...)
 	c.Room = to
 	effects = append(effects, g.broadcastRoom(c.Room, session, fmt.Sprintf("%s이(가) 모습을 드러냈다.", c.Name))...)
 	effects = append(effects, Output{Session: session, Text: g.renderRoom(session, c.Room)})
+	effects = append(effects, g.checkAggro(session, c)...)
 	effects = append(effects, g.save(session))
 	return effects
 }
@@ -264,4 +296,4 @@ func (g *Game) broadcastRoom(room RoomID, skip SessionID, text string) []Effect 
 	return []Effect{Broadcast{Sessions: targets, Text: text}}
 }
 
-const unknownCommandHelp = "알 수 없는 명령입니다. 사용 가능한 명령: 보기, 북쪽/남쪽/동쪽/서쪽/위/아래, 말하기 <내용>, 줍기 <물건>, 버리기 <물건>, 인벤토리"
+const unknownCommandHelp = "알 수 없는 명령입니다. 사용 가능한 명령: 보기, 북쪽/남쪽/동쪽/서쪽/위/아래, 말하기 <내용>, 줍기 <물건>, 버리기 <물건>, 인벤토리, 공격 <대상>"

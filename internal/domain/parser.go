@@ -115,7 +115,16 @@ func Parse(line string) (Command, error) {
 		return Command{Verb: VerbInventory}, nil
 	}
 
-	// Later issues extend the parser with combat verbs.
+	// Combat verbs.
+	if matchesAlias(head, attackAliases) {
+		target, index, err := parseTargetArgs(rest)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Verb: VerbAttack, Target: target, Index: index}, nil
+	}
+
+	// Later issues extend the parser with operator verbs.
 	return Command{}, fmt.Errorf(unknownCommandHelp)
 }
 

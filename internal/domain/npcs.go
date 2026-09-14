@@ -93,6 +93,11 @@ func (g *Game) npcWander(instID string) []Effect {
 	if !ok || !inst.Alive() {
 		return nil
 	}
+	if inst.engaged != "" {
+		// Fighting NPCs hold their ground.
+		g.events.push(g.clock.Now().Add(inst.Def.WanderInterval), evWander, "", instID)
+		return nil
+	}
 	room, ok := g.world.Room(inst.Room)
 	if !ok {
 		return nil
@@ -111,6 +116,7 @@ func (g *Game) npcWander(instID string) []Effect {
 	inst.Room = to
 	g.rooms[to].npcs[instID] = inst
 	effects = append(effects, g.broadcastRoom(to, "", fmt.Sprintf("%s이(가) 모습을 드러냈다.", inst.Def.Name))...)
+	effects = append(effects, g.checkAggroAll(inst)...)
 
 	g.events.push(g.clock.Now().Add(inst.Def.WanderInterval), evWander, "", instID)
 	return effects
@@ -142,7 +148,8 @@ func (g *Game) respawnNPC(def *NPCDef, room RoomID) []Effect {
 		}
 	}
 	inst := g.addNPCInstance(def, room)
-	return g.broadcastRoom(room, "", fmt.Sprintf("%s이(가) 모습을 드러냈다.", inst.Def.Name))
+	effects := g.broadcastRoom(room, "", fmt.Sprintf("%s이(가) 모습을 드러냈다.", inst.Def.Name))
+	return append(effects, g.checkAggroAll(inst)...)
 }
 
 // npcRoomStateText renders the NPC section of a room description.

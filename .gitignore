@@ -1,0 +1,7 @@
+/bin/
+/mud-server
+/data/
+*.db
+*.db-shm
+*.db-wal
+coverage.out

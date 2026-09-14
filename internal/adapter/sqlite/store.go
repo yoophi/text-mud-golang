@@ -115,16 +115,21 @@ func (s *Store) Load(ctx context.Context, name string) (*domain.Character, error
 	var (
 		room      string
 		inventory string
+		hp        int
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT room_id, inventory FROM characters WHERE name = ?`, name).
-		Scan(&room, &inventory)
+	err := s.db.QueryRowContext(ctx, `SELECT room_id, inventory, hp FROM characters WHERE name = ?`, name).
+		Scan(&room, &inventory, &hp)
 	if err == sql.ErrNoRows {
 		return nil, application.ErrCharacterNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load character %s: %w", name, err)
 	}
-	c := &domain.Character{Name: name, Room: domain.RoomID(room), MaxHP: domain.DefaultMaxHP, HP: domain.DefaultMaxHP}
+	if hp <= 0 || hp > domain.DefaultMaxHP {
+		// Pre-#14 rows default to 0: treat as fully healed rather than dead.
+		hp = domain.DefaultMaxHP
+	}
+	c := &domain.Character{Name: name, Room: domain.RoomID(room), MaxHP: domain.DefaultMaxHP, HP: hp}
 	var items []storedItem
 	if err := json.Unmarshal([]byte(inventory), &items); err != nil {
 		return nil, fmt.Errorf("decode inventory of %s: %w", name, err)
@@ -151,9 +156,9 @@ func (s *Store) Save(ctx context.Context, c *domain.Character) error {
 	}
 	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO characters (name, room_id, inventory, updated_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT(name) DO UPDATE SET room_id = excluded.room_id, inventory = excluded.inventory, updated_at = excluded.updated_at`,
-		c.Name, string(c.Room), string(blob), time.Now().UTC().Format(time.RFC3339Nano))
+		INSERT INTO characters (name, room_id, inventory, hp, updated_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(name) DO UPDATE SET room_id = excluded.room_id, inventory = excluded.inventory, hp = excluded.hp, updated_at = excluded.updated_at`,
+		c.Name, string(c.Room), string(blob), c.HP, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return fmt.Errorf("save character %s: %w", c.Name, err)
 	}

@@ -75,6 +75,44 @@ func TestMovePersistsAcrossReopen(t *testing.T) {
 	}
 }
 
+func TestHPPersistsAcrossReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mud.db")
+	ctx := context.Background()
+
+	store := openTestStore(t, path)
+	c := domain.NewCharacter("영희", "plaza")
+	c.HP = 13
+	if err := store.Save(ctx, c); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	store.Close()
+
+	reopened := openTestStore(t, path)
+	loaded, err := reopened.Load(ctx, "영희")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.HP != 13 {
+		t.Fatalf("hp = %d, want 13", loaded.HP)
+	}
+}
+
+func TestLegacyRowWithoutHPHealsToFull(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mud.db")
+	ctx := context.Background()
+	store := openTestStore(t, path)
+	if _, err := store.db.ExecContext(ctx, `INSERT INTO characters (name, room_id, inventory, hp) VALUES ('옛날', 'plaza', '[]', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(ctx, "옛날")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.HP != domain.DefaultMaxHP {
+		t.Fatalf("legacy hp = %d, want full", loaded.HP)
+	}
+}
+
 func TestMigrationsAreIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mud.db")
 	openTestStore(t, path).Close()

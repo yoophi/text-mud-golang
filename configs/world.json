@@ -6,7 +6,7 @@
       "id": "town_square",
       "name": "마을 광장",
       "description": "오래된 분수가 가운데 있는 작은 마을의 광장이다. 사방에서 사람들의 웅성거림이 들려온다.",
-      "exits": { "북쪽": "north_road", "동쪽": "market", "서쪽": "gate" }
+      "exits": { "북쪽": "north_road", "동쪽": "market", "서쪽": "gate", "남쪽": "alley" }
     },
     {
       "id": "north_road",
@@ -15,22 +15,113 @@
       "exits": { "남쪽": "town_square", "북쪽": "hilltop" }
     },
     {
+      "id": "hilltop",
+      "name": "언덕 위",
+      "description": "마을이 한눈에 내려다보이는 언덕이다. 바람이 시원하게 분다.",
+      "exits": { "남쪽": "north_road", "서쪽": "forest_path" }
+    },
+    {
+      "id": "forest_path",
+      "name": "숲길",
+      "description": "울창한 나무 사이로 좁은 길이 이어진다. 어디선가 낮은 울음소리가 들리는 듯하다.",
+      "exits": { "동쪽": "hilltop", "서쪽": "deep_forest" }
+    },
+    {
+      "id": "deep_forest",
+      "name": "깊은 숲",
+      "description": "빛이 잘 들어오지 않는 깊은 숲이다. 발밑에 약초 냄새가 난다.",
+      "exits": { "동쪽": "forest_path" }
+    },
+    {
       "id": "market",
       "name": "시장",
-      "description": "좌판이 늘어선 활기찬 시장이다. 어딘가에서 구운 빵 냄새가 난다.",
-      "exits": { "서쪽": "town_square" }
+      "description": "좌판이 늘어선 활기찬 시장이다. 구운 빵 냄새가 코를 자극한다.",
+      "exits": { "서쪽": "town_square", "북쪽": "blacksmith" }
+    },
+    {
+      "id": "blacksmith",
+      "name": "대장간",
+      "description": "망치 소리가 쟁쟁한 대장간이다. 벽난로에 횃불이 걸려 있다.",
+      "exits": { "남쪽": "market" }
     },
     {
       "id": "gate",
       "name": "마을 입구",
       "description": "낡은 나무 문이 달린 마을 입구다. 밖으로는 넓은 초원이 펼쳐져 있다.",
-      "exits": { "동쪽": "town_square" }
+      "exits": { "동쪽": "town_square", "서쪽": "plains" }
     },
     {
-      "id": "hilltop",
-      "name": "언덕 위",
-      "description": "마을이 한눈에 내려다보이는 언덕이다. 바람이 시원하게 분다.",
-      "exits": { "남쪽": "north_road" }
+      "id": "plains",
+      "name": "초원",
+      "description": "무릎까지 오는 풀이 바람에 물결치는 광활한 초원이다.",
+      "exits": { "동쪽": "gate", "북쪽": "well" }
+    },
+    {
+      "id": "well",
+      "name": "우물가",
+      "description": "시원한 물이 솟는 오래된 우물이다. 두레박이 천천히 흔들린다.",
+      "exits": { "남쪽": "plains" }
+    },
+    {
+      "id": "alley",
+      "name": "뒷골목",
+      "description": "좁고 어두운 골목이다. 축축한 벽돌 냄새가 난다.",
+      "exits": { "북쪽": "town_square", "아래": "cellar" }
+    },
+    {
+      "id": "cellar",
+      "name": "지하 저장고",
+      "description": "곰팡이 냄새가 나는 지하 저장고다. 어둠 속에서 무언가 스치는 소리가 들린다.",
+      "exits": { "위": "alley" }
+    }
+  ],
+  "items": [
+    { "id": "bread", "name": "빵", "aliases": ["식빵"], "description": "갓 구운 빵이다." },
+    { "id": "coin", "name": "동전", "description": "약간 광이 나는 동전이다." },
+    { "id": "torch", "name": "횃불", "aliases": ["불"], "description": "어둠을 밝히는 횃불이다." },
+    { "id": "old_dagger", "name": "낡은 단검", "aliases": ["단검"], "description": "칼날이 무뎌진 낡은 단검이다." },
+    { "id": "herb", "name": "약초", "aliases": ["풀"], "description": "은은한 향이 나는 약초이다." }
+  ],
+  "itemSpawns": [
+    { "room": "town_square", "item": "coin", "count": 2 },
+    { "room": "market", "item": "bread", "count": 2 },
+    { "room": "blacksmith", "item": "torch", "count": 1 },
+    { "room": "cellar", "item": "old_dagger", "count": 1 },
+    { "room": "deep_forest", "item": "herb", "count": 2 }
+  ],
+  "npcs": [
+    {
+      "id": "rat",
+      "name": "쥐",
+      "aliases": ["생쥐"],
+      "room": "cellar",
+      "hp": 4,
+      "damageMin": 1,
+      "damageMax": 2,
+      "aggressive": false,
+      "respawnSeconds": 15
+    },
+    {
+      "id": "hungry_wolf",
+      "name": "굶주린 늑대",
+      "aliases": ["늑대"],
+      "room": "forest_path",
+      "hp": 16,
+      "damageMin": 4,
+      "damageMax": 8,
+      "aggressive": true,
+      "respawnSeconds": 30
+    },
+    {
+      "id": "gray_wolf",
+      "name": "회색 늑대",
+      "aliases": ["회늑대"],
+      "room": "deep_forest",
+      "hp": 22,
+      "damageMin": 5,
+      "damageMax": 9,
+      "aggressive": true,
+      "respawnSeconds": 45
     }
   ]
 }

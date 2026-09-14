@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,25 +36,30 @@ const defaultWorld = `{
   "itemSpawns": [
     {"room": "plaza", "item": "bread", "count": 2},
     {"room": "plaza", "item": "coin", "count": 1}
+  ],
+  "npcs": [
+    {"id": "rat", "name": "쥐", "aliases": ["생쥐"], "room": "alley", "hp": 3, "damageMin": 1, "damageMax": 2, "aggressive": false, "respawnSeconds": 3}
   ]
 }`
 
 // testServer runs the full application stack in-process, reachable over
 // real TCP on 127.0.0.1.
 type testServer struct {
-	t        *testing.T
-	addr     string
-	dbPath   string
-	worldDir string
-	world    string
-	cancel   context.CancelFunc
-	done     chan error
+	t         *testing.T
+	addr      string
+	dbPath    string
+	worldDir  string
+	world     string
+	operators []string
+	cancel    context.CancelFunc
+	done      chan error
+	stopOnce  sync.Once
 }
 
-func startServer(t *testing.T, world string) *testServer {
+func startServer(t *testing.T, world string, operators ...string) *testServer {
 	t.Helper()
 	dir := t.TempDir()
-	ts := &testServer{t: t, dbPath: filepath.Join(dir, "mud.db"), worldDir: dir, world: world}
+	ts := &testServer{t: t, dbPath: filepath.Join(dir, "mud.db"), worldDir: dir, world: world, operators: operators}
 	ts.launch()
 	return ts
 }
@@ -80,7 +86,7 @@ func (ts *testServer) launch() {
 	if err != nil {
 		ts.t.Fatalf("listen: %v", err)
 	}
-	server := application.NewServer(application.Config{}, game, repo, gateway, inputs, logger)
+	server := application.NewServer(application.Config{Operators: ts.operators}, game, repo, gateway, inputs, logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -94,18 +100,36 @@ func (ts *testServer) launch() {
 	ts.done = done
 }
 
-// stop shuts the server down and waits for a clean exit.
+// stop shuts the server down and waits for a clean exit. Idempotent.
 func (ts *testServer) stop() {
 	ts.t.Helper()
-	ts.cancel()
-	select {
-	case err := <-ts.done:
-		if err != nil {
-			ts.t.Fatalf("server exit: %v", err)
+	ts.stopOnce.Do(func() {
+		ts.cancel()
+		select {
+		case err := <-ts.done:
+			if err != nil {
+				ts.t.Fatalf("server exit: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			ts.t.Fatal("server did not stop in time")
 		}
-	case <-time.After(10 * time.Second):
-		ts.t.Fatal("server did not stop in time")
-	}
+	})
+}
+
+// waitStopped waits for the server to exit on its own (e.g. @shutdown)
+// and asserts a clean exit.
+func (ts *testServer) waitStopped() {
+	ts.t.Helper()
+	ts.stopOnce.Do(func() {
+		select {
+		case err := <-ts.done:
+			if err != nil {
+				ts.t.Fatalf("server exit: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			ts.t.Fatal("server did not stop in time")
+		}
+	})
 }
 
 // restart stops the server and starts a fresh process-equivalent using
@@ -113,6 +137,7 @@ func (ts *testServer) stop() {
 func (ts *testServer) restart() {
 	ts.t.Helper()
 	ts.stop()
+	ts.stopOnce = sync.Once{}
 	ts.launch()
 }
 

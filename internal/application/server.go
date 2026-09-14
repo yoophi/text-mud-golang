@@ -18,6 +18,9 @@ type Config struct {
 	TickInterval time.Duration
 }
 
+// shutdownTimeout bounds the graceful shutdown sequence.
+const shutdownTimeout = 5 * time.Second
+
 // Server is the single game loop. It consumes Input events, drives the
 // domain engine, and applies the resulting Effects through outbound
 // ports. All game state changes happen on this goroutine.
@@ -205,10 +208,20 @@ func (s *Server) apply(effects []domain.Effect) {
 // network, and reports errors. It never hangs longer than the timeout.
 func (s *Server) gracefulShutdown(reason string) error {
 	s.log.Info("서버를 종료합니다", "reason", reason)
-	var firstErr error
-	for _, session := range s.game.Sessions() {
-		s.apply(s.game.Disconnect(session))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for _, session := range s.game.Sessions() {
+			s.apply(s.game.Disconnect(session))
+		}
+		s.net.Stop()
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(shutdownTimeout):
+		err := fmt.Errorf("안전한 종료가 %s 안에 완료되지 않았습니다", shutdownTimeout)
+		s.log.Error("종료 타임아웃", "err", err)
+		return err
 	}
-	s.net.Stop()
-	return firstErr
 }

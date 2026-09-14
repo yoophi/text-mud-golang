@@ -147,6 +147,8 @@ func (g *Game) Execute(session SessionID, cmd Command) []Effect {
 		return g.inventory(session, c)
 	case VerbAttack:
 		return g.attack(session, c, cmd.Target, cmd.Index)
+	case VerbAdmin:
+		return g.admin(session, c, cmd)
 	default:
 		return []Effect{Output{Session: session, Text: unknownCommandHelp}}
 	}

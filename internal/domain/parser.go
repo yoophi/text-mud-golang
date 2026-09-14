@@ -124,8 +124,34 @@ func Parse(line string) (Command, error) {
 		return Command{Verb: VerbAttack, Target: target, Index: index}, nil
 	}
 
-	// Later issues extend the parser with operator verbs.
+	// Operator commands: "@goto plaza" or "운영 goto plaza".
+	if strings.HasPrefix(head, "@") && len(head) > 1 {
+		return parseAdmin(head[1:], rest)
+	}
+	if matchesAlias(head, adminVerbs) && len(rest) > 0 {
+		return parseAdmin(rest[0], rest[1:])
+	}
+
 	return Command{}, fmt.Errorf(unknownCommandHelp)
+}
+
+// parseAdmin validates an operator subcommand and its argument.
+func parseAdmin(action string, rest []string) (Command, error) {
+	var admin AdminAction
+	switch strings.ToLower(action) {
+	case "goto", "이동":
+		admin = AdminGoto
+	case "spawn", "생성":
+		admin = AdminSpawn
+	case "shutdown", "종료":
+		admin = AdminShutdown
+	default:
+		return Command{}, fmt.Errorf("알 수 없는 운영 명령입니다. 사용 가능: @goto <방>, @spawn <NPC> [방], @shutdown")
+	}
+	if admin != AdminShutdown && len(rest) == 0 {
+		return Command{}, fmt.Errorf("운영 명령에 인자가 필요합니다")
+	}
+	return Command{Verb: VerbAdmin, Admin: admin, AdminArg: strings.Join(rest, " ")}, nil
 }
 
 // parseTargetArgs splits verb arguments into a target name and an

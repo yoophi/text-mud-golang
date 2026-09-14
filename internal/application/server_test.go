@@ -217,3 +217,78 @@ func TestLoopReusesSavedCharacter(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestLoopAdminShutdownSavesAndStops(t *testing.T) {
+	net := newFakeNet()
+	repo := newFakeRepo()
+	inputs := make(chan Input, 16)
+	game := domain.NewGame(testWorld(), SystemClock{}, SystemRandom{})
+	server := NewServer(Config{TickInterval: 5 * time.Millisecond, Operators: []string{"영희"}}, game, repo, net, inputs, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx) }()
+
+	// Login the operator and request shutdown.
+	inputs <- Input{Session: "s1", Kind: InputConnected}
+	net.waitFor(t, "s1", "이름을 입력하세요")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "영희"}
+	net.waitFor(t, "s1", "생성할까요")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "네"}
+	net.waitFor(t, "s1", "마을 광장")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "북쪽"}
+	net.waitFor(t, "s1", "뒷골목")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "@shutdown"}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("server did not stop on @shutdown")
+	}
+	if repo.savesFor("영희") == 0 {
+		t.Fatal("shutdown must save characters")
+	}
+	if saved := repo.exists["영희"]; saved == nil || saved.Room != "alley" {
+		t.Fatalf("shutdown save wrong: %+v", saved)
+	}
+	net.mu.Lock()
+	stopped := net.stopped
+	net.mu.Unlock()
+	if !stopped {
+		t.Fatal("shutdown must stop the gateway")
+	}
+}
+
+func TestLoopNonOperatorCannotShutdown(t *testing.T) {
+	net := newFakeNet()
+	repo := newFakeRepo()
+	inputs := make(chan Input, 16)
+	game := domain.NewGame(testWorld(), SystemClock{}, SystemRandom{})
+	server := NewServer(Config{TickInterval: 5 * time.Millisecond}, game, repo, net, inputs, slog.Default())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx) }()
+
+	inputs <- Input{Session: "s1", Kind: InputConnected}
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "철수"}
+	net.waitFor(t, "s1", "생성할까요")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "네"}
+	net.waitFor(t, "s1", "마을 광장")
+	inputs <- Input{Session: "s1", Kind: InputLine, Line: "@shutdown"}
+	net.waitFor(t, "s1", "운영자 권한")
+
+	select {
+	case <-done:
+		t.Fatal("server must keep running for non-operators")
+	case <-time.After(300 * time.Millisecond):
+		// still running: success
+	}
+	cancel()
+	<-done
+}
